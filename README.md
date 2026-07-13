@@ -29,7 +29,7 @@ Este é um aplicativo React Native/Expo construído com estética de terminal (b
 
 ## O que já foi implementado
 
-### ✅ Tela de Tarefas (`src/screens/TarefasScreen.js`)
+### Tela de Tarefas (`src/screens/TarefasScreen.js`)
 - Lista de tarefas com conclusão
 - Adição manual de tarefas
 - **Comandos de voz simulados** - ex: "tenho que fazer X até amanhã às 5"
@@ -38,36 +38,36 @@ Este é um aplicativo React Native/Expo construído com estética de terminal (b
   - Concluir tarefas existentes
   - Detecção automática de matéria (Trabalho, Estudo, Pessoal)
 
-### ✅ Tela de Notas (`src/screens/NotasScreen.js`)
+### Tela de Notas (`src/screens/NotasScreen.js`)
 - Lista de notas mentais
 - Gravação de áudio simulada
 - Transcrição em tempo real (mock)
 - Abre no Visualizador para leitura
 
-### ✅ Tela de Aulas (`src/screens/AulasScreen.js`)
+### Tela de Aulas (`src/screens/AulasScreen.js`)
 - Lista de aulas por matéria
 - Chat da aula (`src/screens/ChatAulaScreen.js`)
 - Criação de novas aulas
 - Filtragem por matéria
 
-### ✅ Tela de Resumos (`src/screens/ResumosScreen.js`)
+### Tela de Resumos (`src/screens/ResumosScreen.js`)
 - Lista de resumos com preview
 - Abre no Visualizador para leitura completa
 - Exemplo com Markdown + LaTeX + Mermaid
 
-### ✅ Visualizador (`src/screens/VisualizadorScreen.js`)
+### Visualizador (`src/screens/VisualizadorScreen.js`)
 - Renderização de **Markdown**
 - Renderização de **LaTeX** ($ inline e $$ bloco)
 - Renderização de **Mermaid** diagrams
 - Toggle VER/EDITAR
 - Reprodução de áudio (para notas)
 
-### ✅ Gravação (`src/screens/GravacaoScreen.js`)
+### Gravação (`src/screens/GravacaoScreen.js`)
 - Gravação de áudio simulada
 - Contador de duração
 - Transcrição pré-formatada
 
-### ✅ Chat da Aula (`src/screens/ChatAulaScreen.js`)
+### Chat da Aula (`src/screens/ChatAulaScreen.js`)
 - Troca de mensagens
 - Botão para gravar (simulado)
 - Botões para anexos (placeholder com alertas)
@@ -163,7 +163,3 @@ Para testar, toque no ícone de microfone e o app usará uma frase pré-definida
 - **Testes manuais**: o app usa simulações - valide cada feature manualmente
 
 ---
-
-## Arquivos removidos (limpeza)
-
-- `src/screens/theme.js` - Tema duplicado não utilizado
