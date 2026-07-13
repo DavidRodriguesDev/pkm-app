@@ -1,25 +1,21 @@
 import { View, Text, StyleSheet } from 'react-native';
-import { colors, spacing, radius } from '../theme';
+import { colors, spacing, radius, font } from '../theme';
 
-// Badge de status colorido (Processado, Aguardando sincronização, etc)
-export function StatusBadge({ label, tone = 'warning' }) {
-  const tones = {
-    warning: { bg: colors.warningBg, text: colors.warning },
-    success: { bg: colors.successBg, text: colors.success },
-    accent: { bg: colors.accentBg, text: colors.accent },
-  };
-  const t = tones[tone] || tones.warning;
-
-  return (
-    <View style={[styles.badge, { backgroundColor: t.bg }]}>
-      <Text style={[styles.badgeText, { color: t.text }]}>{label}</Text>
-    </View>
-  );
-}
-
-// Card genérico com título, subtítulo opcional e badges
 export function Card({ children, style }) {
   return <View style={[styles.card, style]}>{children}</View>;
+}
+
+// tone controla só o PESO visual (contorno vs preenchido), nunca a cor —
+// o app é estritamente preto e branco.
+export function StatusBadge({ label, tone = 'outline' }) {
+  const preenchido = tone === 'filled';
+  return (
+    <View style={[styles.badge, preenchido && styles.badgeFilled]}>
+      <Text style={[styles.badgeText, preenchido && styles.badgeTextFilled]} numberOfLines={1}>
+        {label}
+      </Text>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -27,7 +23,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.md,
+    borderRadius: radius.sm,
     padding: spacing.md,
     marginBottom: spacing.sm,
   },
@@ -35,10 +31,23 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: colors.border,
     borderRadius: radius.sm,
   },
+  badgeFilled: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
   badgeText: {
-    fontSize: 11,
-    fontWeight: '500',
+    fontFamily: font.mono,
+    fontSize: 10,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    color: colors.textSecondary,
+  },
+  badgeTextFilled: {
+    color: colors.onAccent,
+    fontWeight: '700',
   },
 });

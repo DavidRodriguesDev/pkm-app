@@ -10,13 +10,37 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { colors, spacing, radius, font } from '../theme';
 import { Card, StatusBadge } from '../components/Card';
-import { colors, spacing, radius } from '../theme';
 
+// Estado inicial: lista de aulas com mensagens simuladas
 const AULAS_MOCK = [
-  { id: '1', titulo: 'Aula 03 - Limites', materia: 'Cálculo II', selecionada: true },
-  { id: '2', titulo: 'Aula 04 - Derivadas', materia: 'Cálculo II', selecionada: true },
-  { id: '3', titulo: 'Aula 01 - Cinemática', materia: 'Física I', selecionada: false },
+  {
+    id: '1',
+    titulo: 'Aula 03 - Limites',
+    materia: 'Cálculo II',
+    selecionada: true,
+    messages: [
+      { id: '1', tipo: 'text', texto: 'Bom dia, hoje vamos ver limites', remetente: 'eu', hora: '09:00' },
+      { id: '2', tipo: 'text', texto: 'Lembrem da fórmula básica...', remetente: 'eu', hora: '09:05' },
+    ],
+  },
+  {
+    id: '2',
+    titulo: 'Aula 04 - Derivadas',
+    materia: 'Cálculo II',
+    selecionada: true,
+    messages: [
+      { id: '1', tipo: 'text', texto: 'Continuando com derivadas', remetente: 'eu', hora: '10:00' },
+    ],
+  },
+  {
+    id: '3',
+    titulo: 'Aula 01 - Cinemática',
+    materia: 'Física I',
+    selecionada: false,
+    messages: [],
+  },
 ];
 
 export default function AulasScreen({ navigation }) {
@@ -24,12 +48,12 @@ export default function AulasScreen({ navigation }) {
   const [materias, setMaterias] = useState(['Cálculo II', 'Física I']);
   const [materiaAtiva, setMateriaAtiva] = useState('Todas');
   const [aulas, setAulas] = useState(AULAS_MOCK);
+  const [novaAulaVisivel, setNovaAulaVisivel] = useState(false);
+  const [novasAulas, setNovasAulas] = useState([]);
 
-  // Estado do formulário de "nova aula"
-  const [modalVisivel, setModalVisivel] = useState(false);
-  const [novoTitulo, setNovoTitulo] = useState('');
-  const [materiaEscolhida, setMateriaEscolhida] = useState(materias[0]);
   const [novaMateriaTexto, setNovaMateriaTexto] = useState('');
+  const [novoTitulo, setNovoTitulo] = useState('');
+  const [materiaModal, setMateriaModal] = useState(materias[0]);
 
   function alternarSelecao(id) {
     setAulas((prev) =>
@@ -41,27 +65,33 @@ export default function AulasScreen({ navigation }) {
     const nome = novaMateriaTexto.trim();
     if (!nome || materias.includes(nome)) return;
     setMaterias((prev) => [...prev, nome]);
-    setMateriaEscolhida(nome);
+    setMateriaModal(nome);
     setNovaMateriaTexto('');
   }
 
-  function confirmarNovaAula() {
+  function criarNovaAula() {
     if (!novoTitulo.trim()) return;
-    setModalVisivel(false);
-    const titulo = novoTitulo;
-    const materia = materiaEscolhida;
+    const novaAula = {
+      id: String(Date.now()),
+      titulo: novoTitulo,
+      materia: materiaModal, // usa a matéria escolhida no modal, não mais fixo em materias[0]
+      selecionada: true,
+      messages: [],
+    };
+    setNovasAulas((prev) => [...prev, novaAula]);
+    setNovaAulaVisivel(false);
     setNovoTitulo('');
-    // Vai pra tela de gravação já sabendo o título e a matéria dessa aula
-    navigation.navigate('Gravacao', { tipo: 'aula', titulo, materia });
+    navigation.navigate('ChatAula', { aula: novaAula });
   }
 
-  const aulasFiltradas =
-    materiaAtiva === 'Todas' ? aulas : aulas.filter((a) => a.materia === materiaAtiva);
+  const aulasFiltradas = [...novasAulas, ...aulas].filter(
+    (a) => materiaAtiva === 'Todas' || a.materia === materiaAtiva
+  );
 
   return (
     <View style={styles.container}>
       <View style={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.md }}>
-        <Text style={styles.header}>Aulas</Text>
+        <Text style={styles.header}>AULAS_</Text>
 
         <FlatList
           horizontal
@@ -87,17 +117,30 @@ export default function AulasScreen({ navigation }) {
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ padding: spacing.md, paddingTop: spacing.sm }}
         renderItem={({ item }) => (
-          <TouchableOpacity onPress={() => alternarSelecao(item.id)}>
-            <Card style={item.selecionada && styles.cardSelecionado}>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('ChatAula', { aula: item })}
+            onLongPress={() => alternarSelecao(item.id)}
+            activeOpacity={0.6}
+          >
+            <Card style={item.selecionada ? styles.cardSelecionado : undefined}>
               <View style={styles.linha}>
-                <Text style={styles.titulo}>{item.titulo}</Text>
-                <Ionicons
-                  name={item.selecionada ? 'checkbox' : 'square-outline'}
-                  size={20}
-                  color={item.selecionada ? colors.accent : colors.textSecondary}
-                />
+                <View style={{ flex: 1 }}>
+                  <View style={styles.linhaSuperior}>
+                    <Text style={styles.titulo}>{item.titulo}</Text>
+                    <Ionicons
+                      name={item.selecionada ? 'checkbox' : 'square-outline'}
+                      size={16}
+                      color={item.selecionada ? colors.textPrimary : colors.textDim}
+                    />
+                  </View>
+                  <StatusBadge label={item.materia} tone="outline" />
+                  {item.messages.length > 0 && (
+                    <Text style={styles.ultimaMsg} numberOfLines={1}>
+                      {item.messages[item.messages.length - 1].texto}
+                    </Text>
+                  )}
+                </View>
               </View>
-              <StatusBadge label={item.materia} tone="accent" />
             </Card>
           </TouchableOpacity>
         )}
@@ -107,40 +150,39 @@ export default function AulasScreen({ navigation }) {
         <TouchableOpacity
           style={styles.botaoResumir}
           onPress={() => {
-            // Aqui entra a chamada pro endpoint /resumir com os sessao_ids selecionados
+            // Resumir selecionadas
           }}
         >
-          <Text style={styles.botaoResumirTexto}>Resumir selecionadas</Text>
+          <Text style={styles.botaoResumirTexto}>RESUMIR SELECIONADAS</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.fab} onPress={() => setModalVisivel(true)}>
-          <Ionicons name="add" size={28} color="#fff" />
+        <TouchableOpacity style={styles.fab} onPress={() => { setMateriaModal(materias[0]); setNovaAulaVisivel(true); }}>
+          <Ionicons name="add" size={26} color={colors.onAccent} />
         </TouchableOpacity>
       </View>
 
-      {/* Modal de criação de nova aula: título + matéria (existente ou nova) */}
-      <Modal visible={modalVisivel} transparent animationType="slide">
+      <Modal visible={novaAulaVisivel} transparent animationType="slide">
         <View style={styles.modalFundo}>
           <View style={styles.modalCaixa}>
-            <Text style={styles.modalTitulo}>Nova aula</Text>
+            <Text style={styles.modalTitulo}>&gt; NOVA_AULA</Text>
 
             <TextInput
               style={styles.modalInput}
-              placeholder="Título da aula"
-              placeholderTextColor={colors.textSecondary}
+              placeholder="título da aula"
+              placeholderTextColor={colors.textDim}
               value={novoTitulo}
               onChangeText={setNovoTitulo}
             />
 
-            <Text style={styles.modalLabel}>Matéria</Text>
+            <Text style={styles.modalLabel}>matéria</Text>
             <View style={styles.chipsWrap}>
               {materias.map((m) => (
                 <TouchableOpacity
                   key={m}
-                  onPress={() => setMateriaEscolhida(m)}
-                  style={[styles.chip, materiaEscolhida === m && styles.chipAtivo]}
+                  onPress={() => setMateriaModal(m)}
+                  style={[styles.chip, materiaModal === m && styles.chipAtivo]}
                 >
-                  <Text style={[styles.chipText, materiaEscolhida === m && styles.chipTextAtivo]}>
+                  <Text style={[styles.chipText, materiaModal === m && styles.chipTextAtivo]}>
                     {m}
                   </Text>
                 </TouchableOpacity>
@@ -150,25 +192,25 @@ export default function AulasScreen({ navigation }) {
             <View style={styles.novaMateriaRow}>
               <TextInput
                 style={[styles.modalInput, { flex: 1, marginBottom: 0 }]}
-                placeholder="Adicionar nova matéria"
-                placeholderTextColor={colors.textSecondary}
+                placeholder="adicionar nova matéria"
+                placeholderTextColor={colors.textDim}
                 value={novaMateriaTexto}
                 onChangeText={setNovaMateriaTexto}
               />
               <TouchableOpacity style={styles.botaoAddMateria} onPress={adicionarMateria}>
-                <Ionicons name="add" size={20} color="#fff" />
+                <Ionicons name="add" size={18} color={colors.onAccent} />
               </TouchableOpacity>
             </View>
 
             <View style={styles.modalBotoes}>
               <TouchableOpacity
                 style={styles.botaoCancelar}
-                onPress={() => setModalVisivel(false)}
+                onPress={() => setNovaAulaVisivel(false)}
               >
-                <Text style={styles.botaoCancelarTexto}>Cancelar</Text>
+                <Text style={styles.botaoCancelarTexto}>CANCELAR</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.botaoConfirmar} onPress={confirmarNovaAula}>
-                <Text style={styles.botaoConfirmarTexto}>Iniciar gravação</Text>
+              <TouchableOpacity style={styles.botaoConfirmar} onPress={criarNovaAula}>
+                <Text style={styles.botaoConfirmarTexto}>CRIAR E COMEÇAR</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -179,66 +221,73 @@ export default function AulasScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.surface },
-  header: { fontSize: 18, fontWeight: '500', color: colors.textPrimary, marginBottom: spacing.md },
+  container: { flex: 1, backgroundColor: colors.background },
+  header: { fontSize: 16, fontFamily: font.mono, fontWeight: '700', letterSpacing: 1, color: colors.textPrimary, marginBottom: spacing.md },
   chipsRow: { flexGrow: 0, marginBottom: spacing.sm },
   chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.md },
   chip: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
-    borderRadius: radius.full,
+    borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.background,
+    backgroundColor: colors.surface,
     marginRight: spacing.sm,
   },
   chipAtivo: { backgroundColor: colors.accent, borderColor: colors.accent },
-  chipText: { fontSize: 12, color: colors.textSecondary },
-  chipTextAtivo: { color: '#fff', fontWeight: '500' },
-  linha: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.xs },
-  titulo: { fontSize: 15, fontWeight: '500', color: colors.textPrimary },
-  cardSelecionado: { borderColor: colors.accent, borderWidth: 1.5 },
+  chipText: { fontSize: 11, fontFamily: font.mono, color: colors.textSecondary },
+  chipTextAtivo: { color: colors.onAccent, fontWeight: '700' },
+  linha: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  linhaSuperior: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.xs },
+  titulo: { fontSize: 14, fontFamily: font.mono, fontWeight: '700', color: colors.textPrimary, flex: 1, marginRight: spacing.sm },
+  ultimaMsg: { fontSize: 12, fontFamily: font.mono, color: colors.textDim, marginTop: spacing.xs },
+  cardSelecionado: { borderColor: colors.borderStrong, borderWidth: 1 },
   rodape: { padding: spacing.md, gap: spacing.sm },
   botaoResumir: {
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.md,
+    borderRadius: radius.sm,
     paddingVertical: spacing.sm,
     alignItems: 'center',
   },
-  botaoResumirTexto: { fontSize: 13, color: colors.textPrimary, fontWeight: '500' },
+  botaoResumirTexto: { fontSize: 11, fontFamily: font.mono, color: colors.textPrimary, fontWeight: '700', letterSpacing: 0.5 },
   fab: {
     position: 'absolute',
     right: spacing.lg,
     bottom: spacing.xl + 40,
-    width: 56,
-    height: 56,
+    width: 52,
+    height: 52,
     borderRadius: radius.full,
     backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 4,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
   },
   modalFundo: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'flex-end',
   },
   modalCaixa: {
     backgroundColor: colors.background,
-    borderTopLeftRadius: radius.md,
-    borderTopRightRadius: radius.md,
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: colors.border,
     padding: spacing.lg,
   },
-  modalTitulo: { fontSize: 16, fontWeight: '500', color: colors.textPrimary, marginBottom: spacing.md },
-  modalLabel: { fontSize: 12, color: colors.textSecondary, marginBottom: spacing.sm },
+  modalTitulo: { fontSize: 14, fontFamily: font.mono, fontWeight: '700', letterSpacing: 1, color: colors.textPrimary, marginBottom: spacing.md },
+  modalLabel: { fontSize: 10, fontFamily: font.mono, letterSpacing: 1, textTransform: 'uppercase', color: colors.textDim, marginBottom: spacing.sm },
   modalInput: {
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.md,
+    borderRadius: radius.sm,
     paddingHorizontal: spacing.md,
     height: 44,
+    fontFamily: font.mono,
+    fontSize: 13,
     color: colors.textPrimary,
     marginBottom: spacing.md,
   },
@@ -246,8 +295,10 @@ const styles = StyleSheet.create({
   botaoAddMateria: {
     width: 44,
     height: 44,
-    borderRadius: radius.md,
-    backgroundColor: colors.textSecondary,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -256,17 +307,17 @@ const styles = StyleSheet.create({
     flex: 1,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.md,
+    borderRadius: radius.sm,
     paddingVertical: spacing.sm,
     alignItems: 'center',
   },
-  botaoCancelarTexto: { color: colors.textSecondary, fontSize: 13 },
+  botaoCancelarTexto: { color: colors.textSecondary, fontSize: 11, fontFamily: font.mono },
   botaoConfirmar: {
     flex: 2,
     backgroundColor: colors.accent,
-    borderRadius: radius.md,
+    borderRadius: radius.sm,
     paddingVertical: spacing.sm,
     alignItems: 'center',
   },
-  botaoConfirmarTexto: { color: '#fff', fontSize: 13, fontWeight: '500' },
+  botaoConfirmarTexto: { color: colors.onAccent, fontSize: 11, fontFamily: font.mono, fontWeight: '700' },
 });

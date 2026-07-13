@@ -1,65 +1,169 @@
-# PKM App — front-end (esqueleto)
+# PKM App - App de Produtividade e Estudos
 
-Front-end mobile do app de gestão de conhecimento pessoal, feito em React Native + Expo.
-Nesta etapa é só a interface, com dados mockados — sem SQLite, sem gravação real, sem
-conexão com o PC ainda. O objetivo é validar o fluxo e o visual antes de plugar a lógica.
+> Um aplicativo mobile monocromático (estilo terminal) para organização de tarefas, notas de aula, resumos e gravações, focado em minimalismo e eficiência.
 
-## Como rodar
+---
 
-1. Crie o projeto base do Expo (se ainda não tiver um):
-   ```
-   npx create-expo-app pkm-app
-   cd pkm-app
-   ```
+## O que é este projeto
 
-2. Instale as dependências de navegação:
-   ```
-   npx expo install @react-navigation/native @react-navigation/bottom-tabs @react-navigation/native-stack react-native-screens react-native-safe-area-context
-   ```
+Este é um aplicativo React Native/Expo construído com estética de terminal (btop/htop), com:
+- Design **preto e branco** estrito (sem cores)
+- Fonte **monoespaçada** do sistema
+- Interação por **comandos de voz** (simulado)
+- Suporte a **Markdown + LaTeX + Mermaid** para renderização de conteúdo técnico
 
-3. Copie a pasta `src/` e o arquivo `App.js` deste projeto pra dentro do seu projeto Expo,
-   substituindo o `App.js` que o `create-expo-app` gerou.
+---
 
-4. Rode:
-   ```
-   npx expo start
-   ```
+## Objetivos do projeto
 
-5. Escaneie o QR code com o app **Expo Go** (Play Store) no seu celular.
+| Prioridade | Objetivo |
+|------------|----------|
+| 1 | Criar um app de produtividade minimalista para estudantes |
+| 2 | Notas de aula com gravação e transcrição simulada |
+| 3 | Sistema de tarefas com comandos de voz (ex: "realizei X", "tenho que fazer Y") |
+| 4 | Resumos com renderização de fórmulas matemáticas |
+| 5 | Chat de aula para troca de mensagens e arquivos |
+| 6 | Estética de terminal para foco e minimalismo |
 
-## Estrutura
+---
+
+## O que já foi implementado
+
+### ✅ Tela de Tarefas (`src/screens/TarefasScreen.js`)
+- Lista de tarefas com conclusão
+- Adição manual de tarefas
+- **Comandos de voz simulados** - ex: "tenho que fazer X até amanhã às 5"
+- Interpretador de voz (`src/utils/comandosDeVoz.js`) que reconhece:
+  - Criar tarefas com título, prazo e matéria
+  - Concluir tarefas existentes
+  - Detecção automática de matéria (Trabalho, Estudo, Pessoal)
+
+### ✅ Tela de Notas (`src/screens/NotasScreen.js`)
+- Lista de notas mentais
+- Gravação de áudio simulada
+- Transcrição em tempo real (mock)
+- Abre no Visualizador para leitura
+
+### ✅ Tela de Aulas (`src/screens/AulasScreen.js`)
+- Lista de aulas por matéria
+- Chat da aula (`src/screens/ChatAulaScreen.js`)
+- Criação de novas aulas
+- Filtragem por matéria
+
+### ✅ Tela de Resumos (`src/screens/ResumosScreen.js`)
+- Lista de resumos com preview
+- Abre no Visualizador para leitura completa
+- Exemplo com Markdown + LaTeX + Mermaid
+
+### ✅ Visualizador (`src/screens/VisualizadorScreen.js`)
+- Renderização de **Markdown**
+- Renderização de **LaTeX** ($ inline e $$ bloco)
+- Renderização de **Mermaid** diagrams
+- Toggle VER/EDITAR
+- Reprodução de áudio (para notas)
+
+### ✅ Gravação (`src/screens/GravacaoScreen.js`)
+- Gravação de áudio simulada
+- Contador de duração
+- Transcrição pré-formatada
+
+### ✅ Chat da Aula (`src/screens/ChatAulaScreen.js`)
+- Troca de mensagens
+- Botão para gravar (simulado)
+- Botões para anexos (placeholder com alertas)
+- Área de mensagens com scroll automático
+
+---
+
+## Tecnologias usadas
+
+| Biblioteca | Uso |
+|------------|-----|
+| React Native 0.86 | UI base |
+| Expo 57 | Framework |
+| React Navigation | Navegação (Bottom Tabs + Stack) |
+| `react-native-markdown-display` | Renderização Markdown |
+| `react-native-katex` | Renderização LaTeX |
+| `react-native-webview` | WebView para renderização conjunta |
+| `expo-audio` | Gravação de áudio |
+
+---
+
+## Estrutura do projeto
 
 ```
-App.js                        -> navegação (bottom tabs + stacks)
-src/theme.js                  -> cores e espaçamentos centrais
-src/components/Card.js        -> card e badge de status reutilizáveis
-src/screens/NotasScreen.js    -> lista de sessões de notas (só captura por voz)
-src/screens/AulasScreen.js    -> lista de aulas, filtro por matéria, modal de nova aula
-src/screens/TarefasScreen.js  -> lista de tarefas, input por texto ou voz, confirmação do agente
-src/screens/ResumosScreen.js  -> lista de resumos gerados, expansível ao tocar
-src/screens/GravacaoScreen.js -> tela de gravação (usada por Notas e Aulas, com anexos só em Aulas)
+pkm-app/
+├── App.js                 # Navegação principal (Tabs)
+├── index.js               # Ponto de entrada
+├── app.json               # Configuração Expo
+├── package.json           # Dependências
+├── src/
+│   ├── theme.js           # Tema monocromático (cores, spacing, font)
+│   ├── assets/            # Assets do projeto
+│   ├── components/        # Componentes reutilizáveis
+│   │   └── Card.js        # Card + StatusBadge
+│   ├── screens/           # Telas do app
+│   │   ├── AulasScreen.js
+│   │   ├── ChatAulaScreen.js
+│   │   ├── GravacaoScreen.js
+│   │   ├── NotasScreen.js
+│   │   ├── ResumosScreen.js
+│   │   ├── TarefasScreen.js
+│   │   ├── VisualizadorScreen.js
+│   │   └── utils/
+│   │       └── comandosDeVoz.js
+│   └── assets/            # Outros assets
+└── assets/                # Ícones, splash, libs (katex, mermaid)
 ```
 
-## Decisões desta versão
+---
 
-- **Espaçamento superior:** todas as telas usam `useSafeAreaInsets` + um respiro extra, pensando
-  na barra de notificação/câmera do Poco X7 Pro. Se noutro aparelho ficar apertado ou exagerado,
-  ajuste o valor de `spacing.lg` somado ao `insets.top` em cada tela.
-- **Notas só grava:** removido anexo de foto/documento do fluxo de Notas — fica só no de Aulas,
-  onde faz sentido (foto de quadro, apostila, etc).
-- **Nova aula tem formulário próprio:** o botão "+" em Aulas abre um modal pra nomear a aula e
-  escolher (ou criar) a matéria antes de ir pra tela de gravação — reflete o fluxo real de
-  "criar bloco associado a uma matéria" descrito na arquitetura.
-- **Tarefas aceita texto ou voz:** o campo de texto pode ser digitado direto ou preenchido a
-  partir da gravação (hoje simulada) — os dois caminhos alimentam o mesmo botão de adicionar.
-- **Resumos agora tem aba própria:** lista os resumos já gerados, com matéria e período, expansível.
+## Como usar
 
-## O que ainda é mock (próximos passos)
+### Instalação
+```bash
+npm install
+npx expo start
+```
 
-- `GravacaoScreen`: gravação de áudio e transcrição real (whisper.cpp) — hoje é texto estático.
-- `TarefasScreen`: extração de intenção via IA — hoje o botão de mic só simula preencher o texto.
-- `AulasScreen` / `NotasScreen` / `ResumosScreen`: dados vêm de arrays fixos no topo do arquivo —
-  trocar por consultas ao SQLite local quando o banco for integrado.
-- Nenhuma tela ainda fala com o servidor Flask do PC.
+### Comandos de voz simulados
 
-Cada ponto onde a lógica real vai entrar está marcado com um comentário no código.
+Para testar, toque no ícone de microfone e o app usará uma frase pré-definida:
+
+- **Criar tarefa**: "tenho que fazer uma atividade de matemática até amanhã às 5 horas da tarde"
+- **Concluir tarefa**: "realizei pagar conta de luz"
+
+---
+
+## Próximos passos (para novos contribuidores)
+
+### Prioridade alta
+1. **Conectar com backend real** - substituir mocks por API
+2. **Implementar gravação de áudio real** - usar `expo-audio` para gravar e salvar
+3. **Implementar transcrição real** - conectar Whisper ou Google Speech-to-Text
+4. **Adicionar autenticação** - atualmente tudo é local
+
+### Prioridade média
+5. **Melhorar o interpretador de voz** - mais variações de frases
+6. **Adicionar busca/filtros** - nas tarefas e notas
+7. **Exportação de dados** - CSV/PDF dos resumos
+
+### Prioridade baixa
+8. **Notificações push** - lembretes de prazos
+9. **Backup automático** - para nuvem
+10. **Tema claro** - alternância tema preto/branco
+
+---
+
+## Notas para desenvolvedores
+
+- **Estética rigorosa**: nunca adicione cores, use apenas variações de cinza
+- **Fonte monoespaçada**: mantenha a consistência do terminal
+- **Comentários no código**: explicitem mocks e o que precisa mudar em produção
+- **Testes manuais**: o app usa simulações - valide cada feature manualmente
+
+---
+
+## Arquivos removidos (limpeza)
+
+- `src/screens/theme.js` - Tema duplicado não utilizado
