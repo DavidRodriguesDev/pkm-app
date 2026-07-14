@@ -161,5 +161,3 @@ Para testar, toque no ícone de microfone e o app usará uma frase pré-definida
 - **Fonte monoespaçada**: mantenha a consistência do terminal
 - **Comentários no código**: explicitem mocks e o que precisa mudar em produção
 - **Testes manuais**: o app usa simulações - valide cada feature manualmente
-
----

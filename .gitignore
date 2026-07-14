@@ -42,3 +42,7 @@ yarn-error.*
 
 
 .remember
+.agents
+.claude
+.openclaude
+agent
