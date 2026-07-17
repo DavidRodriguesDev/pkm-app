@@ -4,7 +4,9 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import { initExecutorch } from 'react-native-executorch';
 
+import { ExpoResourceFetcher } from 'react-native-executorch-expo-resource-fetcher';
 import NotasScreen from './src/screens/NotasScreen';
 import TarefasScreen from './src/screens/TarefasScreen';
 import AulasScreen from './src/screens/AulasScreen';
@@ -13,6 +15,11 @@ import GravacaoScreen from './src/screens/GravacaoScreen';
 import ChatAulaScreen from './src/screens/ChatAulaScreen';
 import VisualizadorScreen from './src/screens/VisualizadorScreen';
 import { colors, font } from './src/theme';
+import { AiProvider } from './src/ai/AiProvider';
+
+
+initExecutorch({ resourceFetcher: ExpoResourceFetcher });
+
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -108,7 +115,13 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <StatusBar style="light" />
-      <AppNavigation />
+      {/* AiProvider envolve toda a navegação pra garantir UMA ÚNICA
+          instância de Whisper e Qwen3 pro app inteiro — ver
+          src/ai/AiProvider.js pro motivo (o react-native-executorch só
+          suporta um "model runner" ativo por vez). */}
+      <AiProvider>
+        <AppNavigation />
+      </AiProvider>
     </SafeAreaProvider>
   );
 }
@@ -143,7 +156,9 @@ export default function App() {
 //        return (
 //          <SafeAreaProvider>
 //            <StatusBar style="light" />
-//            <AppNavigation />
+//            <AiProvider>
+//              <AppNavigation />
+//            </AiProvider>
 //          </SafeAreaProvider>
 //        );
 //      }

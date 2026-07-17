@@ -1,0 +1,9 @@
+// Learn more https://docs.expo.io/guides/customizing-metro
+const { getDefaultConfig } = require('expo/metro-config');
+
+const config = getDefaultConfig(__dirname);
+
+// Adicionar extensões TypeScript
+config.resolver.sourceExts.push('ts', 'tsx');
+
+module.exports = config;

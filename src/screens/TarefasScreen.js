@@ -1,37 +1,25 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Card } from '../components/Card';
 import { colors, spacing, radius, font } from '../theme';
-import { interpretarComando } from '../utils/comandosDeVoz';
+import { tarefasRepository, materiasRepository, initDatabase } from '../repositories/tarefasRepository';
+import { ModalConfirmacao } from '../components/ModalConfirmacao';
+import { useAi } from '../ai/AiProvider';
+import { useGravador } from '../hooks/useGravador';
 
 function hojeISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-const TAREFAS_MOCK = [
-  { id: '1', titulo: 'Trabalho de cálculo', prazoData: '2026-07-20', prazoHora: null, criadaEm: '2026-07-10', concluida: false, materia: 'Trabalho' },
-  { id: '2', titulo: 'Pagar conta de luz', prazoData: '2026-07-15', prazoHora: '18:00', criadaEm: '2026-07-10', concluida: false, materia: 'Pessoal' },
-];
-
-// MOCK — não existe reconhecimento de voz real aqui ainda. A cada gravação
-// simulada, o app pega a próxima frase dessa lista (em vez de um áudio de
-// verdade) e manda pro interpretarComando(). Quando plugar STT de verdade,
-// troca essa parte por "fraseReconhecida = textoQueVeioDoWhisper" — o
-// resto do fluxo (processarComandoDeVoz) não precisa mudar em nada.
-const FRASES_EXEMPLO = [
-  'tenho que fazer uma atividade de matemática até amanhã às 5 horas da tarde',
-  'realizei pagar conta de luz',
-  'preciso fazer uma reunião de trabalho até hoje às 6 da tarde',
-  'tenho que estudar física até depois de amanhã às 9 da manhã',
-];
-
 export default function TarefasScreen() {
   const insets = useSafeAreaInsets();
-  const [tarefas, setTarefas] = useState(TAREFAS_MOCK);
+  const [tarefas, setTarefas] = useState([]);
+  const [materias, setMaterias] = useState([]);
+  const [carregando, setCarregando] = useState(true);
 
   // fluxo de digitação manual (independente do de voz)
   const [texto, setTexto] = useState('');
@@ -39,26 +27,54 @@ export default function TarefasScreen() {
   const [horaPrazoManual, setHoraPrazoManual] = useState('');
   const [mostrarPickerPrazo, setMostrarPickerPrazo] = useState(false);
   const [mostrarPickerHora, setMostrarPickerHora] = useState(false);
-
-  const [materias, setMaterias] = useState(['Trabalho', 'Estudo', 'Pessoal']);
   const [materiaSelecionada, setMateriaSelecionada] = useState('Trabalho');
   const [novaMateriaTexto, setNovaMateriaTexto] = useState('');
 
+  // Estado do modal de confirmação
+  const [modalVisivel, setModalVisivel] = useState(false);
+  const [tarefaPendente, setTarefaPendente] = useState(null);
+
+  // Interpretador LLM + transcrição — instância única compartilhada por
+  // todo o app (ver src/ai/AiProvider.js). Isso evita ter mais de uma
+  // instância do mesmo modelo viva ao mesmo tempo (o
+  // react-native-executorch só suporta um "model runner" ativo por vez).
+  const { transcricao, interpretador, interpretarComando } = useAi();
+
+  // fluxo de comando de voz — grava, depois transcreve
+  const gravador = useGravador();
+  const [transcrevendo, setTranscrevendo] = useState(false);
+  const [ultimoComando, setUltimoComando] = useState(null);
+
+  // Inicializar banco de dados
+  useEffect(() => {
+    (async () => {
+      try {
+        await initDatabase();
+        await carregarDados();
+      } catch (e) {
+        console.error('[Tarefas] Erro ao inicializar:', e);
+      } finally {
+        setCarregando(false);
+      }
+    })();
+  }, []);
+
+  // Recarregar dados quando o componente montar ou mudar
+  async function carregarDados() {
+    const listaTarefas = await tarefasRepository.list(false);
+    const listaMaterias = await materiasRepository.list();
+    setTarefas(listaTarefas);
+    setMaterias(listaMaterias);
+    if (listaMaterias.length > 0) {
+      setMateriaSelecionada(listaMaterias[0].nome);
+    }
+  }
+
+  // fluxo de digitação manual (independente do de voz)
   const [pendenteConfirmar, setPendenteConfirmar] = useState(null);
 
   // fluxo de comando de voz
-  const [gravando, setGravando] = useState(false);
-  const [tempoGravacao, setTempoGravacao] = useState(0);
-  const [ultimoComando, setUltimoComando] = useState(null);
-  const indiceFraseRef = useRef(0);
-
-  useEffect(() => {
-    let intervalo;
-    if (gravando) {
-      intervalo = setInterval(() => setTempoGravacao((t) => t + 1), 1000);
-    }
-    return () => clearInterval(intervalo);
-  }, [gravando]);
+  const [ultimaFrase, setUltimaFrase] = useState('');
 
   // some com o feedback do último comando sozinho depois de um tempo
   useEffect(() => {
@@ -66,6 +82,33 @@ export default function TarefasScreen() {
     const timeout = setTimeout(() => setUltimoComando(null), 6000);
     return () => clearTimeout(timeout);
   }, [ultimoComando]);
+
+  // Processar resultado da interpretação LLM
+  useEffect(() => {
+    if (interpretador.erro) {
+      setUltimoComando({ ok: false, frase: ultimaFrase, texto: `Erro: ${interpretador.erro}` });
+      return;
+    }
+
+    if (interpretador.estaProcessando) return;
+
+    if (interpretador.resultado) {
+      const res = interpretador.resultado;
+      if (res.tipo === 'criar' && res.titulo) {
+        // Mostrar modal de confirmação
+        setTarefaPendente({
+          titulo: res.titulo,
+          materia: res.materia,
+          dataPrazo: res.dataPrazo,
+        });
+        setModalVisivel(true);
+      } else if (res.tipo === 'concluir' && res.tarefaId) {
+        tarefasRepository.concluir(res.tarefaId);
+        carregarDados();
+        setUltimoComando({ ok: true, frase: ultimaFrase, texto: `tarefa concluída [ID ${res.tarefaId}]` });
+      }
+    }
+  }, [interpretador.resultado, interpretador.erro, interpretador.estaProcessando, ultimaFrase]);
 
   function formatarDuracao(segundos) {
     const min = Math.floor(segundos / 60);
@@ -81,66 +124,55 @@ export default function TarefasScreen() {
   }
 
   function processarComandoDeVoz(fraseReconhecida) {
-    const resultado = interpretarComando(fraseReconhecida, tarefas);
-
-    if (resultado.tipo === 'concluir') {
-      setTarefas((prev) => prev.map((t) => (t.id === resultado.tarefaId ? { ...t, concluida: true } : t)));
-      setUltimoComando({ ok: true, frase: fraseReconhecida, texto: `tarefa concluída: "${resultado.tituloEncontrado}"` });
-      return;
-    }
-
-    if (resultado.tipo === 'criar') {
-      const novaTarefa = {
-        id: String(Date.now()),
-        titulo: resultado.titulo,
-        criadaEm: hojeISO(),
-        prazoData: resultado.prazoData,
-        prazoHora: resultado.prazoHora,
-        materia: resultado.materiaSugerida,
-        concluida: false,
-      };
-      setTarefas((prev) => [...prev, novaTarefa]);
-      const prazoTexto = resultado.prazoData
-        ? ` · prazo ${formatarData(resultado.prazoData)}${resultado.prazoHora ? ' ' + resultado.prazoHora : ''}`
-        : '';
-      setUltimoComando({
-        ok: true,
-        frase: fraseReconhecida,
-        texto: `tarefa criada: "${resultado.titulo}" [${resultado.materiaSugerida}]${prazoTexto}`,
-      });
-      return;
-    }
-
-    setUltimoComando({ ok: false, frase: fraseReconhecida, texto: resultado.motivo });
+    setUltimaFrase(fraseReconhecida);
+    interpretarComando(fraseReconhecida, tarefas, materias);
   }
 
-  function alternarGravacao() {
-    if (gravando) {
-      setGravando(false);
-      setTempoGravacao(0);
-      const frase = FRASES_EXEMPLO[indiceFraseRef.current % FRASES_EXEMPLO.length];
-      indiceFraseRef.current += 1;
-      processarComandoDeVoz(frase);
+  async function alternarGravacao() {
+    if (gravador.gravando) {
+      const uri = await gravador.parar();
+      if (!uri) return;
+      setTranscrevendo(true);
+      try {
+        const frase = await transcricao.transcrever(uri);
+        if (frase?.trim()) {
+          processarComandoDeVoz(frase.trim());
+        } else {
+          setUltimoComando({ ok: false, frase: '', texto: 'não entendi nada no áudio, tenta de novo' });
+        }
+      } catch (e) {
+        console.error('[Tarefas] Erro na transcrição:', e);
+        setUltimoComando({ ok: false, frase: '', texto: `erro ao transcrever: ${e.message || 'desconhecido'}` });
+      } finally {
+        setTranscrevendo(false);
+      }
     } else {
-      setGravando(true);
+      try {
+        await gravador.iniciar();
+      } catch (e) {
+        console.error('[Tarefas] Erro ao iniciar gravação:', e);
+        setUltimoComando({ ok: false, frase: '', texto: `erro ao iniciar: ${e.message || 'desconhecido'}` });
+      }
     }
   }
 
-  function adicionarTarefaManual() {
+  async function adicionarTarefaManual() {
     if (!texto.trim()) return;
-    const tarefa = {
-      id: String(Date.now()),
+    const novaTarefa = {
       titulo: texto,
-      criadaEm: hojeISO(),
-      prazoData: dataPrazoManual || null,
-      prazoHora: horaPrazoManual || null,
       materia: materiaSelecionada,
-      concluida: false,
+      dataPrazo: dataPrazoManual || null,
+      horaPrazo: horaPrazoManual || null,
     };
-    setTarefas((prev) => [...prev, tarefa]);
-    setTexto('');
-    setDataPrazoManual('');
-    setHoraPrazoManual('');
+    try {
+      await tarefasRepository.create(novaTarefa.titulo, novaTarefa.materia, novaTarefa.dataPrazo, novaTarefa.horaPrazo, 'manual');
+      setTexto('');
+      setDataPrazoManual('');
+      setHoraPrazoManual('');
+      await carregarDados();
+    } catch (e) {
+      console.error('[Tarefas] Erro ao criar:', e);
+    }
   }
 
   function onChangeDataPrazo(event, dataSelecionada) {
@@ -162,17 +194,66 @@ export default function TarefasScreen() {
     }
   }
 
-  function adicionarMateria() {
+  async function adicionarMateria() {
     const nome = novaMateriaTexto.trim();
-    if (!nome || materias.includes(nome)) return;
-    setMaterias((prev) => [...prev, nome]);
-    setMateriaSelecionada(nome);
-    setNovaMateriaTexto('');
+    if (!nome || materias.some((m) => m.nome === nome)) return;
+    try {
+      await materiasRepository.create(nome);
+      await carregarDados();
+      setNovaMateriaTexto('');
+    } catch (e) {
+      console.error('[Tarefas] Erro ao criar matéria:', e);
+    }
   }
 
-  function concluirTarefa(id) {
-    setTarefas((prev) => prev.map((t) => (t.id === id ? { ...t, concluida: true } : t)));
+  async function concluirTarefa(id) {
+    await tarefasRepository.concluir(id);
+    await carregarDados();
     setPendenteConfirmar(null);
+  }
+
+  // Confirmar tarefa criada pelo LLM
+  function confirmarTarefaCriada() {
+    if (tarefaPendente) {
+      tarefasRepository.create(
+        tarefaPendente.titulo,
+        tarefaPendente.materia || 'Pessoal',
+        tarefaPendente.dataPrazo || null,
+        null,
+        'voz'
+      ).then(() => {
+        setModalVisivel(false);
+        setTarefaPendente(null);
+        carregarDados();
+        setUltimoComando({ ok: true, frase: ultimaFrase, texto: `tarefa criada: "${tarefaPendente.titulo}"` });
+      });
+    }
+  }
+
+  // Editar tarefa antes de salvar
+  function editarTarefa() {
+    setModalVisivel(false);
+    setTarefaPendente(null);
+    if (tarefaPendente?.titulo) {
+      setTexto(tarefaPendente.titulo);
+      if (tarefaPendente.dataPrazo) setDataPrazoManual(tarefaPendente.dataPrazo);
+      if (tarefaPendente.materia) setMateriaSelecionada(tarefaPendente.materia);
+    }
+  }
+
+  // Cancelar criação da tarefa
+  function cancelarTarefa() {
+    setModalVisivel(false);
+    setTarefaPendente(null);
+    setUltimoComando({ ok: false, frase: ultimaFrase, texto: 'criação de tarefa cancelada' });
+  }
+
+  if (carregando) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }}>
+        <Text style={{ fontFamily: font.mono, color: colors.textPrimary }}>INICIALIZANDO...</Text>
+      </View>
+    );
   }
 
   return (
@@ -180,8 +261,14 @@ export default function TarefasScreen() {
       <View style={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.md }}>
         <Text style={styles.header}>A_FAZER_</Text>
         <Text style={styles.dica} numberOfLines={2}>
-          grave dizendo algo como "tenho que fazer X até amanhã às 5 da tarde" ou "realizei X" — ou digite abaixo
+          fale naturalmente, tipo "organizar tarefa até amanhã às 5" ou "terminei o relatório" — ou digite abaixo
         </Text>
+
+        {!transcricao.modeloPronto && (
+          <Text style={styles.gravandoTexto}>
+            ● baixando modelo de transcrição... {Math.round((transcricao.progressoModelo || 0) * 100)}%
+          </Text>
+        )}
 
         <View style={styles.inputRow}>
           <TextInput
@@ -193,14 +280,18 @@ export default function TarefasScreen() {
             onSubmitEditing={adicionarTarefaManual}
           />
           <TouchableOpacity
-            style={[styles.botaoIcone, gravando && styles.botaoIconeAtivo]}
+            style={[styles.botaoIcone, gravador.gravando && styles.botaoIconeAtivo]}
             onPress={alternarGravacao}
           >
-            <Ionicons name={gravando ? 'stop' : 'mic'} size={20} color={gravando ? colors.textPrimary : colors.onAccent} />
+            <Ionicons name={gravador.gravando ? 'stop' : 'mic'} size={20} color={gravador.gravando ? colors.textPrimary : colors.onAccent} />
           </TouchableOpacity>
         </View>
 
-        {gravando && <Text style={styles.gravandoTexto}>● OUVINDO COMANDO... {formatarDuracao(tempoGravacao)}</Text>}
+        {gravador.gravando && <Text style={styles.gravandoTexto}>● OUVINDO COMANDO... {formatarDuracao(gravador.tempoGravacao)}</Text>}
+
+        {transcrevendo && <Text style={styles.processandoTexto}>● TRANSCREVENDO ÁUDIO (on-device)...</Text>}
+
+        {interpretador.estaProcessando && <Text style={styles.processandoTexto}>● INTERPRETANDO COM IA...</Text>}
 
         {ultimoComando && (
           <View style={[styles.comandoBox, !ultimoComando.ok && styles.comandoBoxErro]}>
@@ -230,12 +321,12 @@ export default function TarefasScreen() {
           <View style={styles.materiasRow}>
             {materias.map((m) => (
               <TouchableOpacity
-                key={m}
-                onPress={() => setMateriaSelecionada(m)}
-                style={[styles.chipMateria, materiaSelecionada === m && styles.chipMateriaAtivo]}
+                key={m.id}
+                onPress={() => setMateriaSelecionada(m.nome)}
+                style={[styles.chipMateria, materiaSelecionada === m.nome && styles.chipMateriaAtivo]}
               >
-                <Text style={[styles.chipMateriaText, materiaSelecionada === m && styles.chipMateriaTextAtivo]} numberOfLines={1}>
-                  {m}
+                <Text style={[styles.chipMateriaText, materiaSelecionada === m.nome && styles.chipMateriaTextAtivo]} numberOfLines={1}>
+                  {m.nome}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -282,7 +373,7 @@ export default function TarefasScreen() {
 
       <FlatList
         data={tarefas.filter((t) => !t.concluida)}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.id.toString()}
         contentContainerStyle={{ padding: spacing.md, paddingTop: spacing.sm }}
         renderItem={({ item }) => (
           <Card>
@@ -291,9 +382,9 @@ export default function TarefasScreen() {
                 <Text style={styles.titulo}>{item.titulo}</Text>
                 <View style={styles.infoRow}>
                   <Text style={styles.infoTexto}>criada {formatarData(item.criadaEm)}</Text>
-                  {item.prazoData && (
+                  {item.dataPrazo && (
                     <Text style={styles.infoTexto}>
-                      prazo {formatarData(item.prazoData)}{item.prazoHora ? ` ${item.prazoHora}` : ''}
+                      prazo {formatarData(item.dataPrazo)}{item.horaPrazo ? ` ${item.horaPrazo}` : ''}
                     </Text>
                   )}
                   <Text style={styles.materia}>[{item.materia}]</Text>
@@ -319,6 +410,14 @@ export default function TarefasScreen() {
             )}
           </Card>
         )}
+      />
+
+      <ModalConfirmacao
+        visivel={modalVisivel}
+        tarefa={tarefaPendente}
+        onConfirmar={confirmarTarefaCriada}
+        onEditar={editarTarefa}
+        onCancelar={cancelarTarefa}
       />
     </View>
   );
@@ -350,6 +449,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   botaoIconeAtivo: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderStrong },
+  processandoTexto: { fontSize: 11, fontFamily: font.mono, color: colors.textPrimary, marginTop: spacing.xs },
   gravandoTexto: { fontSize: 11, fontFamily: font.mono, color: colors.textPrimary, marginTop: spacing.xs },
   comandoBox: {
     marginTop: spacing.sm,

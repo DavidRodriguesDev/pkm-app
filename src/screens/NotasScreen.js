@@ -1,23 +1,16 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { colors, spacing, radius, font } from '../theme';
+import { useGravador } from '../hooks/useGravador';
+import { useAi } from '../ai/AiProvider';
 
 const NOTAS_MOCK = [
   { id: '1', titulo: 'Ideias de fim de semana', conteudo: 'Ler mais sobre produtividade, tentar novas receitas', criadaEm: '11/07/2026 09:30', audio: null },
   { id: '2', titulo: 'Reflexão sobre hábitos', conteudo: 'Manter rotina de exercícios, dormir cedo', criadaEm: '11/07/2026 10:15', audio: null },
 ];
-
-// MOCK — texto "falado" usado pra simular a transcrição chegando aos
-// poucos, palavra por palavra, enquanto a gravação está rolando (como um
-// STT em streaming faria de verdade). Em produção, isso seria substituído
-// pelas partial results de um serviço de transcrição real (ex: Whisper
-// streaming, Google STT streaming) chegando via WebSocket/callback — a UI
-// abaixo (o setNovoConteudo por palavra) já está pronta pra receber isso.
-const FRASE_TRANSCRICAO =
-  'Hoje pensei bastante sobre como organizar melhor meus estudos e percebi que preciso criar uma rotina mais consistente durante a semana, separando um horário fixo pra cada matéria.'.split(' ');
 
 export default function NotasScreen() {
   const navigation = useNavigation();
@@ -26,42 +19,15 @@ export default function NotasScreen() {
   const [modalVisivel, setModalVisivel] = useState(false);
   const [novoTitulo, setNovoTitulo] = useState('');
   const [novoConteudo, setNovoConteudo] = useState('');
-  const [tempoGravacao, setTempoGravacao] = useState(0);
-  const [gravando, setGravando] = useState(false);
-  const [audioInfo, setAudioInfo] = useState(null); // null | { duracao, arquivo }
+  const [audioInfo, setAudioInfo] = useState(null); // null | { duracao, uri }
+  const [transcrevendo, setTranscrevendo] = useState(false);
+  const [erroTranscricao, setErroTranscricao] = useState(null);
 
-  const indicePalavraRef = useRef(0);
-  const intervaloTranscricaoRef = useRef(null);
-  const intervaloTempoRef = useRef(null);
-
-  useEffect(() => {
-    if (gravando) {
-      intervaloTempoRef.current = setInterval(() => setTempoGravacao((t) => t + 1), 1000);
-    }
-    return () => clearInterval(intervaloTempoRef.current);
-  }, [gravando]);
-
-  // Escreve a transcrição EM TEMPO REAL enquanto grava, palavra por
-  // palavra — é aqui que entraria o streaming de um STT real (ver
-  // comentário no topo do arquivo).
-  useEffect(() => {
-    if (gravando) {
-      indicePalavraRef.current = 0;
-      setNovoConteudo('');
-      intervaloTranscricaoRef.current = setInterval(() => {
-        if (indicePalavraRef.current >= FRASE_TRANSCRICAO.length) {
-          clearInterval(intervaloTranscricaoRef.current);
-          return;
-        }
-        const palavra = FRASE_TRANSCRICAO[indicePalavraRef.current];
-        setNovoConteudo((prev) => (prev ? `${prev} ${palavra}` : palavra));
-        indicePalavraRef.current += 1;
-      }, 220);
-    } else {
-      clearInterval(intervaloTranscricaoRef.current);
-    }
-    return () => clearInterval(intervaloTranscricaoRef.current);
-  }, [gravando]);
+  const gravador = useGravador();
+  // Instância única de Whisper compartilhada pelo app inteiro (ver
+  // src/ai/AiProvider.js) — evita duas instâncias do modelo concorrendo
+  // com a do useTranscricao() usado em TarefasScreen.
+  const { transcricao } = useAi();
 
   function formatarDuracao(segundos) {
     const min = Math.floor(segundos / 60);
@@ -79,21 +45,34 @@ export default function NotasScreen() {
     return `${dia}/${mes}/${ano} ${hora}:${min}`;
   }
 
-  function alternarGravacao() {
-    if (gravando) {
-      setGravando(false);
-      // MOCK de armazenamento: em produção, aqui é onde o arquivo de
-      // áudio gravado (via expo-audio) seria salvo localmente
-      // (expo-file-system) e/ou enviado pro backend, guardando a URI
-      // real em vez desse nome de arquivo fake.
-      setAudioInfo({
-        duracao: tempoGravacao,
-        arquivo: `nota_audio_${Date.now()}.m4a`,
-      });
-      setTempoGravacao(0);
+  async function alternarGravacao() {
+    if (gravador.gravando) {
+      const uri = await gravador.parar();
+      setAudioInfo(uri ? { duracao: gravador.tempoGravacao, uri } : null);
+
+      if (uri) {
+        setTranscrevendo(true);
+        setErroTranscricao(null);
+        try {
+          const texto = await transcricao.transcrever(uri);
+          setNovoConteudo(texto);
+        } catch (e) {
+          console.error('[Notas] Erro na transcrição:', e);
+          setErroTranscricao(e.message || 'erro ao transcrever o áudio');
+        } finally {
+          setTranscrevendo(false);
+        }
+      }
     } else {
       setAudioInfo(null);
-      setGravando(true);
+      setErroTranscricao(null);
+      setNovoConteudo('');
+      try {
+        await gravador.iniciar();
+      } catch (e) {
+        console.error('[Notas] Erro ao iniciar gravação:', e);
+        setErroTranscricao(e.message || 'erro ao iniciar gravação');
+      }
     }
   }
 
@@ -112,11 +91,10 @@ export default function NotasScreen() {
 
   function fecharModal() {
     setModalVisivel(false);
-    setGravando(false);
-    setTempoGravacao(0);
     setNovoTitulo('');
     setNovoConteudo('');
     setAudioInfo(null);
+    setErroTranscricao(null);
   }
 
   function navegarParaVisualizador(item) {
@@ -153,6 +131,14 @@ export default function NotasScreen() {
           <View style={styles.modalCaixa}>
             <Text style={styles.modalTitulo}>&gt; NOVA_NOTA</Text>
 
+            {!transcricao.modeloPronto && (
+              <View style={styles.gravandoBox}>
+                <Text style={styles.gravandoTexto}>
+                  ● baixando modelo de transcrição... {Math.round((transcricao.progressoModelo || 0) * 100)}%
+                </Text>
+              </View>
+            )}
+
             <TextInput
               style={styles.modalInput}
               placeholder="título da nota"
@@ -171,22 +157,35 @@ export default function NotasScreen() {
               numberOfLines={6}
             />
 
-            {gravando && (
+            {gravador.gravando && (
               <View style={styles.gravandoBox}>
                 <View style={styles.gravandoBarra}>
                   {[...Array(10)].map((_, i) => (
                     <View key={i} style={[styles.barraPonto, { height: Math.random() * 14 + 6 }]} />
                   ))}
                 </View>
-                <Text style={styles.gravandoTexto}>● GRAVANDO... {formatarDuracao(tempoGravacao)} — transcrevendo em tempo real</Text>
+                <Text style={styles.gravandoTexto}>● GRAVANDO... {formatarDuracao(gravador.tempoGravacao)}</Text>
               </View>
             )}
 
-            {!gravando && audioInfo && (
+            {transcrevendo && (
+              <View style={styles.gravandoBox}>
+                <Text style={styles.gravandoTexto}>● TRANSCREVENDO ÁUDIO (on-device)...</Text>
+              </View>
+            )}
+
+            {erroTranscricao && (
+              <View style={[styles.audioSalvoBox, styles.audioErroBox]}>
+                <Ionicons name="alert-circle-outline" size={14} color={colors.textPrimary} />
+                <Text style={styles.audioSalvoTexto}>erro na transcrição: {erroTranscricao} — pode digitar manualmente</Text>
+              </View>
+            )}
+
+            {!gravador.gravando && !transcrevendo && audioInfo && (
               <View style={styles.audioSalvoBox}>
                 <Ionicons name="checkmark-circle-outline" size={14} color={colors.textPrimary} />
                 <Text style={styles.audioSalvoTexto}>
-                  áudio gravado ({formatarDuracao(audioInfo.duracao)}) e armazenado · {audioInfo.arquivo}
+                  áudio gravado ({formatarDuracao(audioInfo.duracao)}) e armazenado
                 </Text>
               </View>
             )}
@@ -198,10 +197,10 @@ export default function NotasScreen() {
 
               <View style={styles.gravarContainer}>
                 <TouchableOpacity
-                  style={[styles.botaoGravar, gravando && styles.botaoGravarAtivo]}
+                  style={[styles.botaoGravar, gravador.gravando && styles.botaoGravarAtivo]}
                   onPress={alternarGravacao}
                 >
-                  <Ionicons name={gravando ? 'stop' : 'mic'} size={20} color={gravando ? colors.textPrimary : colors.onAccent} />
+                  <Ionicons name={gravador.gravando ? 'stop' : 'mic'} size={20} color={gravador.gravando ? colors.textPrimary : colors.onAccent} />
                 </TouchableOpacity>
               </View>
 
@@ -298,6 +297,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     backgroundColor: colors.surface,
   },
+  audioErroBox: { borderColor: colors.borderStrong },
   audioSalvoTexto: { flex: 1, fontSize: 10, fontFamily: font.mono, color: colors.textSecondary },
   modalBotoes: { flexDirection: 'row', gap: spacing.sm, alignItems: 'center' },
   botaoCancelar: { flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, paddingVertical: spacing.sm, alignItems: 'center' },

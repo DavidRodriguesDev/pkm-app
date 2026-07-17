@@ -1,17 +1,14 @@
 // -----------------------------------------------------------------------
 // Interpretador de comandos de voz para a tela de Tarefas.
 //
-// IMPORTANTE — isso é um MOCK de front-end: em produção, o texto que entra
-// aqui (`fraseOriginal`) viria de um serviço de transcrição de áudio real
-// (Whisper, Google Speech-to-Text, etc). A função `interpretarComando`
-// já funciona com QUALQUER string, então no dia que plugar STT de verdade
-// é só passar o texto transcrito pra ela — nada aqui precisa mudar.
-//
-// É um parser baseado em regras simples (regex + palavras-chave), não uma
-// IA de verdade. Cobre bem os exemplos pedidos ("realizei X",
-// "tenho que fazer X até amanhã às 5 da tarde") mas vai errar em frases
-// muito fora do padrão. Pra produção, o ideal é mandar a frase transcrita
-// pra um LLM interpretar e devolver os mesmos campos (tipo/título/prazo).
+// IMPORTANTE — o texto que entra aqui (`fraseOriginal`) vem de uma
+// transcrição real (Whisper on-device, via useTranscricao). É um parser
+// baseado em regras simples (regex + palavras-chave), não uma IA de
+// verdade — então ele foi deixado deliberadamente PERMISSIVO: se não
+// reconhecer um verbo de conclusão nem de criação explícito, assume que
+// é uma criação de tarefa e tenta extrair título/prazo da frase inteira,
+// em vez de desistir. Isso cobre frases naturais tipo "organizar tarefa
+// para amanhã às 5 horas", que não começam com "tenho que"/"preciso".
 // -----------------------------------------------------------------------
 
 const VERBOS_CONCLUSAO = [
@@ -25,13 +22,22 @@ const VERBOS_CONCLUSAO = [
   'fiz',
 ];
 
+// Só usados como PISTA (deixam o parser mais confiante), não como
+// exigência — se nenhum bater, ainda cai no fallback de criação lá
+// embaixo.
 const VERBOS_CRIACAO = [
   'tenho que fazer',
   'preciso fazer',
   'tenho que',
   'preciso de',
+  'preciso',
   'lembrar de',
   'anotar que',
+  'organizar',
+  'criar tarefa',
+  'adicionar tarefa',
+  'marcar',
+  'agendar',
 ];
 
 // Palavras-chave simples pra chutar a matéria a partir do assunto falado.
@@ -43,8 +49,36 @@ const PALAVRAS_MATERIA = {
   Trabalho: ['reuniao', 'trabalho', 'projeto', 'relatorio', 'cliente', 'apresentacao', 'email'],
 };
 
+// Números por extenso — a transcrição de voz nem sempre vem em dígito
+// ("cinco horas" em vez de "5 horas"), principalmente com modelos
+// menores de Whisper. Cobre 0-29, que dá conta de praticamente qualquer
+// hora do dia falada por extenso.
+const NUMEROS_EXTENSO = {
+  zero: 0, uma: 1, um: 1, duas: 2, dois: 2, tres: 3, quatro: 4, cinco: 5,
+  seis: 6, sete: 7, oito: 8, nove: 9, dez: 10, onze: 11, doze: 12,
+  treze: 13, catorze: 14, quatorze: 14, quinze: 15, dezesseis: 16,
+  dezessete: 17, dezoito: 18, dezenove: 19, vinte: 20,
+};
+
 function removerAcentos(s) {
   return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+// Troca números por extenso por dígitos ANTES de rodar as regexes de
+// hora/data — assim o resto do parser não precisa saber que existe
+// "cinco", só enxerga "5". Cobre "vinte e um" a "vinte e nove" também.
+function normalizarNumerosExtenso(textoNorm) {
+  let resultado = textoNorm.replace(/\bvinte e (\w+)\b/g, (m, unidade) => {
+    const u = NUMEROS_EXTENSO[unidade];
+    return u !== undefined && u >= 1 && u <= 9 ? String(20 + u) : m;
+  });
+  resultado = resultado.replace(/\b(\w+)\b/g, (m) => {
+    if (Object.prototype.hasOwnProperty.call(NUMEROS_EXTENSO, m)) {
+      return String(NUMEROS_EXTENSO[m]);
+    }
+    return m;
+  });
+  return resultado;
 }
 
 function addDias(data, n) {
@@ -75,7 +109,9 @@ function calcularDataRelativa(clausulaNorm) {
   return null;
 }
 
-function extrairHora(clausulaNorm) {
+function extrairHora(clausulaOriginalNorm) {
+  const clausulaNorm = normalizarNumerosExtenso(clausulaOriginalNorm);
+
   if (/meio[\s-]?dia/.test(clausulaNorm)) return '12:00';
   if (/meia[\s-]?noite/.test(clausulaNorm)) return '00:00';
 
@@ -174,6 +210,10 @@ function encontrarTarefaParecida(alvo, tarefasAtuais) {
 export function interpretarComando(fraseOriginal, tarefasAtuais) {
   const fraseNorm = removerAcentos(fraseOriginal.toLowerCase().trim());
 
+  if (!fraseNorm) {
+    return { tipo: 'nao_reconhecido', motivo: 'não veio nenhum texto pra interpretar' };
+  }
+
   for (const verbo of VERBOS_CONCLUSAO) {
     const idx = fraseNorm.indexOf(verbo);
     if (idx !== -1) {
@@ -195,5 +235,9 @@ export function interpretarComando(fraseOriginal, tarefasAtuais) {
     }
   }
 
-  return { tipo: 'nao_reconhecido', motivo: 'não reconheci um comando de tarefa nessa frase' };
+  // Fallback: não achou nenhum verbo-gatilho de criação nem de conclusão.
+  // Em vez de desistir, assume que é uma criação de tarefa e tenta extrair
+  // título/prazo da frase INTEIRA — cobre frases naturais tipo "organizar
+  // tarefa para amanhã às 5 horas", que não começam com "tenho que".
+  return { tipo: 'criar', ...extrairDetalhesTarefa(fraseOriginal.trim()) };
 }
