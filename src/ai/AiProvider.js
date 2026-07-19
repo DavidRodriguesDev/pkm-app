@@ -25,12 +25,13 @@ const AiContext = createContext(null);
 
 export function AiProvider({ children }) {
   const transcricao = useTranscricao();
-  const [interpretadorState, interpretarComando] = useInterpretadorLLM();
+  const [interpretadorState, interpretarComando, testarModeloSemTools] = useInterpretadorLLM();
 
   const value = {
     transcricao,
     interpretador: interpretadorState,
     interpretarComando,
+    testarModeloSemTools,
   };
 
   return <AiContext.Provider value={value}>{children}</AiContext.Provider>;
